@@ -1,4 +1,4 @@
-name: CI/CD for Dockerized Flask App
+name: CI/CD for Dockerized Flask App with Frontend and Backend
 
 on:
   push:
@@ -7,13 +7,25 @@ on:
     branches: [ main ]
 
 jobs:
-  dockerbuild:
+  backend-dockerbuild:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
-    - name: Build The Docker Image
-      run: docker build . --file DockerFile --tag workflow-test:$(date +%s)
-  build-and-test:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Build Backend Docker Image
+      run: docker build ./backend --file ./backend/DockerFile --tag backend-app:$(date +%s)
+
+  frontend-dockerbuild:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Build Frontend Docker Image
+      run: docker build ./frontend --file ./frontend/DockerFile --tag frontend-app:$(date +%s)
+
+  backend-build-and-test:
     runs-on: ubuntu-latest
 
     steps:
@@ -26,17 +38,38 @@ jobs:
         python-version: '3.9'
 
     - name: Install dependencies
+      working-directory: ./backend
       run: |
         python -m pip install --upgrade pip
-        pip install flask
-        pip install pytest
+        pip install -r requirements.txt
 
-    - name: Run tests
+    - name: Run Backend Tests
+      working-directory: ./backend
+      run: pytest
+
+  frontend-build-and-test:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Install Node.js
+      uses: actions/setup-node@v3
+      with:
+        node-version: '16'
+
+    - name: Install Frontend Dependencies
+      working-directory: ./frontend
       run: |
-        pytest
+        npm install
+
+    - name: Run Frontend Tests
+      working-directory: ./frontend
+      run: npm test
 
   build-and-publish:
-    needs: build-and-test
+    needs: [backend-build-and-test, frontend-build-and-test]
     runs-on: ubuntu-latest
 
     steps:
@@ -52,13 +85,23 @@ jobs:
         username: ${{ secrets.DOCKER_USERNAME }}
         password: ${{ secrets.DOCKER_PASSWORD }}
 
-    - name: Build and push Docker image
+    - name: Build and Push Backend Docker Image
       uses: docker/build-push-action@v4
       with:
-        context: .
-        file: ./DockerFile
+        context: ./backend
+        file: ./backend/DockerFile
         push: true
-        tags: ${{ secrets.DOCKER_USERNAME }}/flasktest-app:latest
+        tags: ${{ secrets.DOCKER_USERNAME }}/flask-backend:latest
 
-    - name: Image digest
-      run: echo ${{ steps.build-and-publish.outputs.digest }}
+    - name: Build and Push Frontend Docker Image
+      uses: docker/build-push-action@v4
+      with:
+        context: ./frontend
+        file: ./frontend/DockerFile
+        push: true
+        tags: ${{ secrets.DOCKER_USERNAME }}/frontend-app:latest
+
+    - name: Image Digests
+      run: |
+        echo "Backend Image Digest: ${{ steps.backend-dockerbuild.outputs.digest }}"
+        echo "Frontend Image Digest: ${{ steps.frontend-dockerbuild.outputs.digest }}"
