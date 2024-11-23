@@ -1,7 +1,14 @@
+import pytest
 from app import app
 
-def test_home():
-    response=app.test_client().get("/")
+@pytest.fixture
+def client():
+    app.config['TESTING'] = True
+    with app.test_client() as client:
+        yield client
 
-    assert response.status_code==200
-    assert response.data== b"Hello World!"
+def test_home(client):
+    """Test the home route."""
+    response = client.get("/")
+    assert response.status_code == 200
+    assert b"Hello, World!" in response.data
